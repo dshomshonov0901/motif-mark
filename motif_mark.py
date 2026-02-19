@@ -29,42 +29,24 @@ class FastaRecord:
     """
     Represents one FASTA record, header + sequence. Exons are uppercase bases. Introns are lowercase bases.
     """
-    def __init__(self,header, sequence):
+    def __init__(self, header, sequence):
         self.header = header.strip()
-        self.sequence = "".join(sequence.split()) #removes newlines and whitespace
-    
+        self.sequence = "".join(sequence.split())
+        if not self.sequence:
+            raise ValueError("Empty sequence for record: " + self.header)
+
     def name(self):
-        # label for plot, gets gene name
-        if self.header:
-            return self.header.split()[0]
-        return "record"
-    
+        if self.header.startswith(">"):
+            return self.header[1:].split()[0]
+        return self.header.split()[0] if self.header else "record"
+
     def __len__(self):
         return len(self.sequence)
-    
-    def __iter__(self):
-        return iter(self.record)
-    
+
     def normalized_sequence(self):
-        # for motif scanning we ignore exon/intron case and upper everything
         return self.sequence.upper()
-    
-    def exon_interval(self):
-        exon = []
-        self.record.seek(0)
-        for line in self.record.readlines():
-            for pos, nuc in enumerate(line):
-                if not line.startswith(">"):
-                    print(pos, line)
-                    if nuc.isupper():
-                        exon.append(pos)
-        return exon
-    
+
     def exon_intron_intervals(self):
-        """
-        Returns a list of ExonIntronInterval objects covering the whole sequence.
-        Splits whenever case changes.
-        """
         seq = self.sequence
 
         def feature_type(ch):
@@ -84,6 +66,33 @@ class FastaRecord:
         intervals.append(ExonIntronInterval(start, len(seq), current_type))
         return intervals
     
+class MotifPattern:
+    """
+    Holds a motif pattern and can test if a sequence window matches it,
+    including IUPAC ambiguous nucleotide codes.
+    """
+    IUPAC = {
+        "A": {"A"}, "C": {"C"}, "G": {"G"}, "T": {"T"},
+        "U": {"T"}, "R": {"A", "G"}, "Y": {"C", "T"}, "B": {"C", "G", "T"},
+        "D": {"A", "G", "T"}, "K": {"G", "T"}, "M": {"A", "C"}, "H": {"A", "C", "T"},
+        "V": {"A", "G", "C"}, "S": {"C", "G"}, "W": {"A", "T"}, "N": {"A", "G", "C", "T"}}
+    
+    def __init__(self, pattern):
+            self.pattern = pattern.strip().upper()
+            for ch in self.pattern:
+                if ch not in self.IUPAC:
+                    raise ValueError("Unsupported motif character: " + ch)
+
+    def width(self):
+        return len(self.pattern)
+    
+    def matches(self, window):
+        window = window.upper()
+        for ch1, ch2 in zip(self.pattern, window):
+            if ch2 not in self.IUPAC[ch1]:
+                return False
+        return True
+    
 #testingggggg
 if __name__ == "__main__":
     r = FastaRecord(">INSR chr19:7150261-7150808 (reverse complement)", "atgtccacatgtagtcacgtttgacatcccagggccacctcagcaggccgtctctggggagaattttctctgatttcttccccttcccttgctggacccctgcacctgctggggaagatgtagctcactccgtctagcaagtgatgggagcgagtggtccagggtcaaagccagggtgcccttactcggacacatgtggcctccaagtgtcagagcccagtggtctgtctaatgaagttccctctgtcctcaaaggcgttggttttgtttccacagAAAAACCTCTTCAGGCACTGGTGCCGAGGACCCTAGgtatgactcacctgtgcgacccctggtgcctgctccgcgcagggccggcggcgtgccaggcagatgcctcggagaacccaggggtttctgtggctttttgcatgcggcgggcagctgtgctggagagcagatgcttcaccaattcagaaatccaatgccttcactctgaaatgaaatctgggcatgaatgtggggagaaaccttcactaacacactcttgctaaaacatagaatca")
@@ -92,9 +101,19 @@ if __name__ == "__main__":
     print("sequence:", r.sequence)
     print("intervals:", r.exon_intron_intervals())
 
-# record = open("test.fasta")
+m = MotifPattern("AAAAA")
+seq = r.normalized_sequence()
 
-# test = FastaRecord(record)
-# print(test.exon_interval())
+k = m.width()
+hits = []
+for i in range(0, len(seq) - k + 1):
+    if m.matches(seq[i:i+k]):
+        hits.append(i)
+
+print("motif:", m.pattern)
+print("hit_starts:", hits[:20])
+print("hit_count:", len(hits))
+
+
 
 
