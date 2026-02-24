@@ -93,27 +93,86 @@ class MotifPattern:
                 return False
         return True
     
-#testingggggg
-if __name__ == "__main__":
-    r = FastaRecord(">INSR chr19:7150261-7150808 (reverse complement)", "atgtccacatgtagtcacgtttgacatcccagggccacctcagcaggccgtctctggggagaattttctctgatttcttccccttcccttgctggacccctgcacctgctggggaagatgtagctcactccgtctagcaagtgatgggagcgagtggtccagggtcaaagccagggtgcccttactcggacacatgtggcctccaagtgtcagagcccagtggtctgtctaatgaagttccctctgtcctcaaaggcgttggttttgtttccacagAAAAACCTCTTCAGGCACTGGTGCCGAGGACCCTAGgtatgactcacctgtgcgacccctggtgcctgctccgcgcagggccggcggcgtgccaggcagatgcctcggagaacccaggggtttctgtggctttttgcatgcggcgggcagctgtgctggagagcagatgcttcaccaattcagaaatccaatgccttcactctgaaatgaaatctgggcatgaatgtggggagaaaccttcactaacacactcttgctaaaacatagaatca")
-    print("name:", r.name())
-    print("length:", len(r))
-    print("sequence:", r.sequence)
-    print("intervals:", r.exon_intron_intervals())
+class MotifLocation:
+    def __init__(self, motif, record_name, start, end, lane):
+        self.motif = motif
+        self.record_name = record_name
+        self.start = start
+        self.end = end
+        self.lane = lane
 
-m = MotifPattern("AAAAA")
-seq = r.normalized_sequence()
+    def length(self) -> int:
+        return self.end - self.start
 
-k = m.width()
-hits = []
-for i in range(0, len(seq) - k + 1):
-    if m.matches(seq[i:i+k]):
-        hits.append(i)
+class MotifMark:
+    def __init__(self, fasta_path, motifs_path):
+        self.fasta_path = fasta_path
+        self.motifs_path = motifs_path
 
-print("motif:", m.pattern)
-print("hit_starts:", hits[:20])
-print("hit_count:", len(hits))
+    def run(self):
+        records = self.read_fasta()
+        motifs = self.read_motifs()
+        hits_by_record = self.find_all_hits(records, motifs)
+        self.render(records, motifs, hits_by_record)
 
+    def read_fasta(fasta_path):
+        records = []
+        current_header = None
+        current_sequence = []
+        with open(fasta_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(">"):
+                    if current_header:
+                        full_sequence = "".join(current_sequence)
+                        records.append(FastaRecord(current_header, full_sequence))
+                    current_header = line
+                    current_sequence = []
+                else:
+                    current_sequence.append(line)
+        records.append(FastaRecord(current_header, "".join(current_sequence)))
+        return records
 
+    def read_motifs(motifs_path):
+        motifs = []
+        with open(motifs_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                motifs.append(MotifPattern(line))
+        return motifs
 
+    def find_all_hits(records, motifs):
+        hits_by_record = {}
+        for r in records:
+            record_hits = []
+            seq = r.normalized_sequence()
+            for m in motifs:
+                width = m.width()
+                for i in range(0,len(seq) - width +1):
+                    window = seq[i:i+width]
+                    if m.matches(window) == True:
+                        record_hits.append(MotifLocation(m,r,i,i+width,0))
+            hits_by_record[r.name()] = record_hits
+        return hits_by_record
+
+    def assign_lanes(hits_for_one_record):
+        hits = sorted(hits_for_one_record, key=lambda h: h.start)
+        lane_ends = []
+        for h in hits:
+            placed = False
+
+            for i in range(len(lane_ends)):
+                if h.start >= lane_ends[i]:
+                    h.lane = i
+                    lane_ends[i] = h.end
+                    placed = True
+                    break
+
+            if not placed:
+                h.lane = len(lane_ends)
+                lane_ends.append(h.end)
+
+        return hits
 
