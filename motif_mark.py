@@ -37,19 +37,21 @@ class FastaRecord:
 
     def name(self):
         if self.header.startswith(">"):
-            return self.header[1:].split()[0]
+            return self.header[1:].split()[0] #gene name
         return self.header.split()[0] if self.header else "record"
 
     def __len__(self):
         return len(self.sequence)
 
     def normalized_sequence(self):
+        #uppercase all nucleotides so that motif finding is not case based
         return self.sequence.upper()
 
     def exon_intron_intervals(self):
         seq = self.sequence
 
         def feature_type(ch):
+            #use in rendering
             return "exon" if ch.isupper() else "intron"
 
         intervals = []
@@ -80,6 +82,7 @@ class MotifPattern:
     def __init__(self, pattern):
             self.pattern = pattern.strip().upper()
             for ch in self.pattern:
+                #make sure the motif pattern is valid
                 if ch not in self.IUPAC:
                     raise ValueError("Unsupported motif character: " + ch)
 
@@ -163,22 +166,20 @@ def find_all_hits(records, motifs):
 def assign_lanes(hits_for_one_record):
     #sorts hit starts numerically, assigns the MotifLocation lane parameter based on if the current hits start is greater than or equal
     #to the end of the lane
+    #sort by start
     hits = sorted(hits_for_one_record, key=lambda h: h.start)
     lane_ends = []
     for h in hits:
         placed = False
-
         for i in range(len(lane_ends)):
             if h.start >= lane_ends[i]:
                 h.lane = i
                 lane_ends[i] = h.end
                 placed = True
                 break
-
         if not placed:
-            h.lane = len(lane_ends)
+            h.lane = len(lane_ends) #first lane is set
             lane_ends.append(h.end)
-
     return hits
 
 def merge_hits_for_record(hits_for_one_record):
@@ -223,13 +224,13 @@ def merge_hits_for_record(hits_for_one_record):
     return merged_hits
 
 
-def render(records, hits_by_record, out_png):
+def render(records, hits_by_record, out_png, motifs):
         left_margin = 180
         right_margin = 30
         top_margin = 50
         drawable_width = 1000
         track_gap = 70
-        height = top_margin + len(records) * track_gap + 80
+        height = top_margin + len(records) * track_gap + 120
         #making px_per_base to scale for the longest record in the fasta
         longest = max(len(r) for r in records)
         px_per_base = drawable_width / longest
@@ -238,6 +239,21 @@ def render(records, hits_by_record, out_png):
         context = cairo.Context(surface)
         context.set_source_rgb(1,1,1)
         context.paint() #to make the whole background we start with paint not stroke
+
+         # set colors for diff motifs, max 5 motifs so max 5 colors
+        palette5 = [
+            (0.18, 0.45, 0.80),
+            (0.80, 0.25, 0.25),
+            (0.20, 0.65, 0.35),
+            (0.55, 0.35, 0.75),
+            (0.90, 0.55, 0.15),
+        ]
+        motif_patterns = [m.pattern for m in motifs]
+        if len(motif_patterns) > 5:
+            raise ValueError("Max of 5 motifs supported.")
+        
+        motif_colors = {pat: palette5[i] for i, pat in enumerate(motif_patterns)}
+
         
         for row, record in enumerate(records):
             #adding gene names to left side
@@ -269,6 +285,7 @@ def render(records, hits_by_record, out_png):
                     exon_height = 18
                     y = baseline_y - exon_height / 2
                     h = exon_height
+                    context.set_source_rgb(0, 0, 0)
                     context.rectangle(x, y, w, h)
                     context.fill()
                 #drawing motifs
@@ -282,24 +299,64 @@ def render(records, hits_by_record, out_png):
                     motif_spacing_from_exon = 8
                     exon_height = 18
                     y = baseline_y - exon_height/2 - motif_spacing_from_exon - motif_height - lane_offset
-                    context.set_source_rgb(0.2, 0.2, 0.8)
+                    r, g, b = motif_colors.get(hit.motif.pattern, (0.2, 0.2, 0.8))
+                    context.set_source_rgb(r, g, b)
                     context.rectangle(x, y, w, motif_height)
                     context.fill()
 
+
+        # legend
+        legend_x = left_margin + 25
+        legend_y = (height - 2 *top_margin)
+        swatch = 12
+        row_h = 18
+
+        context.set_source_rgb(0, 0, 0)
+        context.set_font_size(13)
+        context.move_to(legend_x, legend_y)
+        context.show_text("Motifs")
+        context.set_font_size(12)
+
+        y = legend_y + 18
+        for pat in motif_patterns:
+            r, g, b = motif_colors[pat]
+            context.set_source_rgb(r, g, b)
+            context.rectangle(legend_x, y - swatch + 2, swatch, swatch)
+            context.fill()
+            context.set_source_rgb(0, 0, 0)
+            context.move_to(legend_x + swatch + 10, y + 2)
+            context.show_text(pat)
+            y += row_h
+
         surface.write_to_png(out_png)
 
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-f", required=True, help="FASTA file")
+    parser.add_argument("-m", required=True, help="motifs text file")
+    args = parser.parse_args()
+
+    fasta_path = args.f
+    motifs_path = args.m
+
+    #same fasta and png prefix 
+    prefix, _ = os.path.splitext(os.path.basename(fasta_path))
+    out_png = prefix + ".png"
+
+    records = read_fasta(fasta_path)
+    motifs = read_motifs(motifs_path)
+
+    hits_by_record = find_all_hits(records, motifs)
+
+    # merge + lanes per record
+    for rec in records:
+        name = rec.name()
+        hits = hits_by_record.get(name, [])
+        if hits:
+            merged = merge_hits_for_record(hits)
+            hits_by_record[name] = assign_lanes(merged)
+
+    render(records, hits_by_record, out_png, motifs)
+
 if __name__ == "__main__":
-
-    records = read_fasta("test.fasta")
-    motifs = read_motifs("motifs.txt")
-    hits_by_record = find_all_hits(records, motifs)
-
-    hits_by_record = find_all_hits(records, motifs)
-
-    for name in hits_by_record:
-        merged = merge_hits_for_record(hits_by_record[name])
-        hits_by_record[name] = assign_lanes(merged)
-
-    render(records, hits_by_record, "test_render.png")
-
-    print("Render complete.")
+    main()
