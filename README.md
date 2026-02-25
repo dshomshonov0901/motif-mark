@@ -1,12 +1,41 @@
 # motif-mark
 
-This Out of Class Assignment is meant to get you thinking about the classes you might want to implement for OOP Motif Mark, as well as get you to play around with pycairo. Submit:
+Object-oriented Python program that visualizes motifs from a FASTA file.  
+Outputs a single PNG figure per FASTA file using `pycairo`. See documentation: https://pycairo.readthedocs.io/en/latest/
+---
 
-A list of classes you might need for OOP Motif Mark (in English, not code)
-File basename must be "list_of_classes". For example: list_of_classes.txt, list_of_classes.md, etc. 
-[OPTIONAL] How those classes might interact (in English, not code)
-File basename must be "interactions". For example: interactions.txt, interactions.md, etc.
-Working code to generate a line and a rectangle, not at the origin, using pycairo (NOT a jupyter notebook)
-Filename must be "pycairo_basics.py".
-The image that your code created
-File basename must be "pycairo_basics". For example: pycairo_basics.png, pycairo_basics.jpg, pycairo_basics.svg, etc. 
+## *Overview*
+
+`motif-mark-oop.py`:
+
+- Reads a FASTA file (≤ 10 sequences, ≤ 1000 bases each)
+- Reads a motif file (≤ 5 motifs, ≤ 10 bases each, one per line)
+- Finds motif matches (including ambiguous IUPAC nucleotide codes: https://www.promega.com/resources/guides/nucleic-acid-analysis/restriction-enzyme-resource/restriction-enzyme-resource-tables/iupac-ambiguity-codes-for-nucleotide-degeneracy/)
+- Draws:
+  - Introns as a baseline (Introns are defined by lowercase bases in the FASTA sequence)
+  - Exons as filled rectangles (Exons are defined by uppercase bases in the FASTA sequence)
+  - Motifs as colored bars (staggered if overlapping)
+- Outputs a single PNG image to scale
+
+---
+
+## *Environment Setup*
+
+Only `pycairo` is required.
+
+```bash
+conda create -n my_pycairo pycairo
+conda activate my_pycairo
+```
+## Usage
+
+```bash
+python motif-mark-oop.py -f input.fa -m motifs.txt
+```
+
+Arguments:
+-f : FASTA file
+-m : Motifs file
+Output:
+PNG file with same prefix as FASTA
+Example: Figure_1.fa → Figure_1.png
