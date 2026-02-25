@@ -1,6 +1,4 @@
-# motif-mark
-
-Object-oriented Python program that visualizes motifs from a FASTA file.  
+# Object-oriented Python program that visualizes motifs from a FASTA file.  
 
 Outputs a single PNG figure per FASTA file using `pycairo`.
 ---
