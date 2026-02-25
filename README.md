@@ -1,7 +1,8 @@
 # motif-mark
 
 Object-oriented Python program that visualizes motifs from a FASTA file.  
-Outputs a single PNG figure per FASTA file using `pycairo`. See documentation: https://pycairo.readthedocs.io/en/latest/
+
+Outputs a single PNG figure per FASTA file using `pycairo`.
 ---
 
 ## *Overview*
@@ -21,7 +22,7 @@ Outputs a single PNG figure per FASTA file using `pycairo`. See documentation: h
 
 ## *Environment Setup*
 
-Only `pycairo` is required.
+Only `pycairo` is required. See documentation: https://pycairo.readthedocs.io/en/latest/
 
 ```bash
 conda create -n my_pycairo pycairo
@@ -34,8 +35,13 @@ python motif-mark-oop.py -f input.fa -m motifs.txt
 ```
 
 Arguments:
+
 -f : FASTA file
+
 -m : Motifs file
+
 Output:
+
 PNG file with same prefix as FASTA
+
 Example: Figure_1.fa → Figure_1.png
