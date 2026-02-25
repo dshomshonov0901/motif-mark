@@ -104,75 +104,202 @@ class MotifLocation:
     def length(self) -> int:
         return self.end - self.start
 
-class MotifMark:
-    def __init__(self, fasta_path, motifs_path):
-        self.fasta_path = fasta_path
-        self.motifs_path = motifs_path
+#class MotifMark:
+def __init__(self, fasta_path, motifs_path):
+    self.fasta_path = fasta_path
+    self.motifs_path = motifs_path
 
-    def run(self):
-        records = self.read_fasta()
-        motifs = self.read_motifs()
-        hits_by_record = self.find_all_hits(records, motifs)
-        self.render(records, motifs, hits_by_record)
+def run(self):
+    records = self.read_fasta()
+    motifs = self.read_motifs()
+    hits_by_record = self.find_all_hits(records, motifs)
+    self.render(records, motifs, hits_by_record)
 
-    def read_fasta(fasta_path):
-        records = []
-        current_header = None
-        current_sequence = []
-        with open(fasta_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith(">"):
-                    if current_header:
-                        full_sequence = "".join(current_sequence)
-                        records.append(FastaRecord(current_header, full_sequence))
-                    current_header = line
-                    current_sequence = []
-                else:
-                    current_sequence.append(line)
-        records.append(FastaRecord(current_header, "".join(current_sequence)))
-        return records
+def read_fasta(fasta_path):
+    #reads in the fasta file and creates a list of FasaRecord objects per header in FASTA
+    records = []
+    current_header = None
+    current_sequence = []
+    with open(fasta_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(">"):
+                if current_header:
+                    full_sequence = "".join(current_sequence)
+                    records.append(FastaRecord(current_header, full_sequence))
+                current_header = line
+                current_sequence = []
+            else:
+                current_sequence.append(line)
+    records.append(FastaRecord(current_header, "".join(current_sequence)))
+    return records
 
-    def read_motifs(motifs_path):
-        motifs = []
-        with open(motifs_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                motifs.append(MotifPattern(line))
-        return motifs
+def read_motifs(motifs_path):
+    #reads in the motifs file and creates a list of MotifPattern objects per motif in the file
+    motifs = []
+    with open(motifs_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            motifs.append(MotifPattern(line))
+    return motifs
 
-    def find_all_hits(records, motifs):
-        hits_by_record = {}
-        for r in records:
-            record_hits = []
-            seq = r.normalized_sequence()
-            for m in motifs:
-                width = m.width()
-                for i in range(0,len(seq) - width +1):
-                    window = seq[i:i+width]
-                    if m.matches(window) == True:
-                        record_hits.append(MotifLocation(m,r,i,i+width,0))
-            hits_by_record[r.name()] = record_hits
-        return hits_by_record
+def find_all_hits(records, motifs):
+    #for FastaRecord object, looks for each motif hit and creates MotifLocation lists per hit
+    hits_by_record = {}
+    for r in records:
+        record_hits = []
+        seq = r.normalized_sequence()
+        for m in motifs:
+            width = m.width()
+            for i in range(0,len(seq) - width +1):
+                window = seq[i:i+width]
+                if m.matches(window) == True:
+                    record_hits.append(MotifLocation(m,r,i,i+width,0))
+        hits_by_record[r.name()] = record_hits
+    return hits_by_record
 
-    def assign_lanes(hits_for_one_record):
-        hits = sorted(hits_for_one_record, key=lambda h: h.start)
-        lane_ends = []
-        for h in hits:
-            placed = False
+def assign_lanes(hits_for_one_record):
+    #sorts hit starts numerically, assigns the MotifLocation lane parameter based on if the current hits start is greater than or equal
+    #to the end of the lane
+    hits = sorted(hits_for_one_record, key=lambda h: h.start)
+    lane_ends = []
+    for h in hits:
+        placed = False
 
-            for i in range(len(lane_ends)):
-                if h.start >= lane_ends[i]:
-                    h.lane = i
-                    lane_ends[i] = h.end
-                    placed = True
-                    break
+        for i in range(len(lane_ends)):
+            if h.start >= lane_ends[i]:
+                h.lane = i
+                lane_ends[i] = h.end
+                placed = True
+                break
 
-            if not placed:
-                h.lane = len(lane_ends)
-                lane_ends.append(h.end)
+        if not placed:
+            h.lane = len(lane_ends)
+            lane_ends.append(h.end)
 
-        return hits
+    return hits
 
+def merge_hits_for_record(hits_for_one_record):
+    """
+    Merge overlapping/adjacent motif hits of the same motif on a single record so theres not too many lanes
+    """
+    record_name = hits_for_one_record[0].record_name
+    grouped = {}
+    for hit in hits_for_one_record:
+        key = hit.motif.pattern
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(hit)
+
+    merged_hits = []
+
+    for motif_key, hits in grouped.items():
+        # Sort by start (then end)
+        hits.sort(key=lambda h: (h.start, h.end))
+
+        # Start with the first interval
+        cur_start = hits[0].start
+        cur_end = hits[0].end
+
+        # Merge intervals that overlap or touch when next.start == cur_end, which we also merge to make one continuous bar
+        for h in hits[1:]:
+            if h.start <= cur_end:
+                if h.end > cur_end:
+                    cur_end = h.end
+            else:
+                # No overlap then finalize current interval, start a new one
+                merged_hits.append(MotifLocation(hits[0].motif, record_name, cur_start, cur_end, 0))
+                cur_start = h.start
+                cur_end = h.end
+
+        # Finalize the last merged interval for this motif
+        merged_hits.append(MotifLocation(hits[0].motif, record_name, cur_start, cur_end, 0))
+
+    # sort merged hits overall by start
+    merged_hits.sort(key=lambda h: (h.start, h.end))
+
+    return merged_hits
+
+
+def render(records, hits_by_record, out_png):
+        left_margin = 180
+        right_margin = 30
+        top_margin = 50
+        drawable_width = 1000
+        track_gap = 70
+        height = top_margin + len(records) * track_gap + 80
+        #making px_per_base to scale for the longest record in the fasta
+        longest = max(len(r) for r in records)
+        px_per_base = drawable_width / longest
+        #painting white background
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32,drawable_width + right_margin + left_margin, height)
+        context = cairo.Context(surface)
+        context.set_source_rgb(1,1,1)
+        context.paint() #to make the whole background we start with paint not stroke
+        
+        for row, record in enumerate(records):
+            #adding gene names to left side
+            baseline_y = top_margin + row * track_gap + 25
+            x0 = left_margin
+            x1 = left_margin + len(record) * px_per_base
+
+            context.set_source_rgb(0,0,0)
+            context.set_line_width(3)
+            context.move_to(x0, baseline_y)
+            context.line_to(x1, baseline_y)
+            context.stroke()
+            #choosing font
+            context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            context.set_font_size(12)
+            rec_name = record.name()
+            # label
+            context.set_source_rgb(0, 0, 0)
+            context.move_to(20, baseline_y + 4)
+            context.show_text(rec_name)
+
+            #exon rectangles
+            intervals = record.exon_intron_intervals()
+
+            for interval in intervals:
+                if interval.feature_type == "exon":
+                    x = left_margin + interval.start * px_per_base
+                    w = (interval.end - interval.start) * px_per_base
+                    exon_height = 18
+                    y = baseline_y - exon_height / 2
+                    h = exon_height
+                    context.rectangle(x, y, w, h)
+                    context.fill()
+                #drawing motifs
+                hits = hits_by_record.get(record.name(), [])
+                for hit in hits:
+                    x = left_margin + hit.start * px_per_base
+                    w = (hit.end - hit.start) * px_per_base
+                    motif_height = 10
+                    motif_gap = 3 #vertical gap between motifs in diff lanes
+                    lane_offset = hit.lane * (motif_height + motif_gap)
+                    motif_spacing_from_exon = 8
+                    exon_height = 18
+                    y = baseline_y - exon_height/2 - motif_spacing_from_exon - motif_height - lane_offset
+                    context.set_source_rgb(0.2, 0.2, 0.8)
+                    context.rectangle(x, y, w, motif_height)
+                    context.fill()
+
+        surface.write_to_png(out_png)
+
+if __name__ == "__main__":
+
+    records = read_fasta("test.fasta")
+    motifs = read_motifs("motifs.txt")
+    hits_by_record = find_all_hits(records, motifs)
+
+    hits_by_record = find_all_hits(records, motifs)
+
+    for name in hits_by_record:
+        merged = merge_hits_for_record(hits_by_record[name])
+        hits_by_record[name] = assign_lanes(merged)
+
+    render(records, hits_by_record, "test_render.png")
+
+    print("Render complete.")
